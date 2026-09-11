@@ -405,6 +405,10 @@ app.use((err, req, res, next) => {
   next();
 });
 
-app.listen(PORT, () => {
-  console.log(`Server Successfully Started: http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server Successfully Started: http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

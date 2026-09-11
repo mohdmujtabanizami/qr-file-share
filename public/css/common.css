@@ -1,0 +1,50 @@
+:root {
+  --bg1: #667eea;
+  --bg2: #764ba2;
+  --bg: #f4f3fb;
+  --card-bg: #fff;
+  --text: #333;
+  --sub-text: #777;
+  --accent: #6c5ce7;
+  --accent-light: #f1efff;
+  --border: #eee;
+  --danger: #d63031;
+}
+
+body.dark {
+  --bg1: #1e1b2e;
+  --bg2: #14121f;
+  --bg: #14121f;
+  --card-bg: #26223a;
+  --text: #eee;
+  --sub-text: #aaa;
+  --accent: #a29bfe;
+  --accent-light: #34304d;
+  --border: #3a3654;
+  --danger: #ff6b6b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  margin: 0;
+  transition: background 0.3s;
+  color: var(--text);
+}
+
+.theme-btn {
+  background: var(--accent-light);
+  border: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+button {
+  font-family: inherit;
+}

@@ -1,0 +1,23 @@
+{
+  "name": "qr-file-share",
+  "version": "1.0.0",
+  "description": "Upload a file, get a QR code, scan to open the file (Cloudinary storage)",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.1",
+    "cloudinary": "^2.4.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.22.2",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "multer": "^1.4.5-lts.2",
+    "qrcode": "^1.5.4"
+  }
+}

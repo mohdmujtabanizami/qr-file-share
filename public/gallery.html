@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Files Gallery</title>
+<link rel="stylesheet" href="/css/common.css" />
+<link rel="stylesheet" href="/css/gallery.css" />
+</head>
+<body>
+
+<header id="pageHeader" style="display:none;">
+  <button class="theme-btn" id="themeBtn">🌙</button>
+  <h1>📂 Shared Files</h1>
+  <p id="metaInfo">Loading...</p>
+</header>
+
+<div id="loading">Please wait, loading...</div>
+<div id="errorBox">This gallery was not found or the link has expired.</div>
+
+<div id="pinScreen">
+  <div class="lock-icon">🔒</div>
+  <h2>These files are PIN-protected</h2>
+  <p id="pinScreenSub">Enter the correct PIN to view files</p>
+  <input type="tel" id="pinInput" maxlength="8" inputmode="numeric" placeholder="Enter PIN" />
+  <button id="pinSubmitBtn">Unlock</button>
+  <div id="pinError"></div>
+</div>
+
+<div id="content" style="display:none;">
+  <div id="captionBanner" style="display:none;"></div>
+
+  <div id="photosSection" style="display:none;">
+    <div class="section-title" id="photosTitle">Photos</div>
+    <div class="photo-grid" id="photoGrid"></div>
+  </div>
+
+  <div id="pdfSection" style="display:none;">
+    <div class="section-title" id="pdfTitle">PDF Files</div>
+    <div class="pdf-list" id="pdfList"></div>
+  </div>
+</div>
+
+<div id="lightbox">
+  <button class="lb-btn" id="lbClose">✕</button>
+  <button class="lb-btn" id="lbPrev">‹</button>
+  <img id="lbImage" src="" alt="" />
+  <div class="lb-caption" id="lbCaption"></div>
+  <button class="lb-btn" id="lbNext">›</button>
+</div>
+
+<script>
+  const pathParts = window.location.pathname.split("/");
+  const galleryId = pathParts[pathParts.length - 1];
+
+  const loadingDiv = document.getElementById("loading");
+  const errorBox = document.getElementById("errorBox");
+  const pageHeader = document.getElementById("pageHeader");
+  const metaInfo = document.getElementById("metaInfo");
+  const content = document.getElementById("content");
+
+  const pinScreen = document.getElementById("pinScreen");
+  const pinScreenSub = document.getElementById("pinScreenSub");
+  const pinInput = document.getElementById("pinInput");
+  const pinSubmitBtn = document.getElementById("pinSubmitBtn");
+  const pinError = document.getElementById("pinError");
+
+  const photosSection = document.getElementById("photosSection");
+  const photoGrid = document.getElementById("photoGrid");
+  const photosTitle = document.getElementById("photosTitle");
+
+  const pdfSection = document.getElementById("pdfSection");
+  const pdfList = document.getElementById("pdfList");
+  const pdfTitle = document.getElementById("pdfTitle");
+  const captionBanner = document.getElementById("captionBanner");
+
+  const themeBtn = document.getElementById("themeBtn");
+  function applyTheme(mode) {
+    document.body.classList.toggle("dark", mode === "dark");
+    themeBtn.textContent = mode === "dark" ? "☀️" : "🌙";
+  }
+  applyTheme(localStorage.getItem("qrfs-theme") || "light");
+  themeBtn.addEventListener("click", () => {
+    const next = document.body.classList.contains("dark") ? "light" : "dark";
+    applyTheme(next);
+    localStorage.setItem("qrfs-theme", next);
+  });
+
+  let currentImages = [];
+  let currentIndex = 0;
+  const lightbox = document.getElementById("lightbox");
+  const lbImage = document.getElementById("lbImage");
+  const lbCaption = document.getElementById("lbCaption");
+
+  function openLightbox(index) {
+    currentIndex = index;
+    lbImage.src = currentImages[index].url;
+    lbCaption.textContent = currentImages[index].name;
+    lightbox.style.display = "flex";
+  }
+  function closeLightbox() { lightbox.style.display = "none"; }
+  function showNext(delta) {
+    currentIndex = (currentIndex + delta + currentImages.length) % currentImages.length;
+    lbImage.src = currentImages[currentIndex].url;
+    lbCaption.textContent = currentImages[currentIndex].name;
+  }
+  document.getElementById("lbClose").addEventListener("click", closeLightbox);
+  document.getElementById("lbPrev").addEventListener("click", () => showNext(-1));
+  document.getElementById("lbNext").addEventListener("click", () => showNext(1));
+  lightbox.addEventListener("click", (e) => { if (e.target === lightbox) closeLightbox(); });
+  document.addEventListener("keydown", (e) => {
+    if (lightbox.style.display !== "flex") return;
+    if (e.key === "Escape") closeLightbox();
+    if (e.key === "ArrowRight") showNext(1);
+    if (e.key === "ArrowLeft") showNext(-1);
+  });
+
+  function renderFiles(files, caption) {
+    pageHeader.style.display = "block";
+    content.style.display = "block";
+    metaInfo.textContent = `Total ${files.length} files — tap any item to open`;
+
+    if (caption) {
+      captionBanner.textContent = `💌 ${caption}`;
+      captionBanner.style.display = "block";
+    }
+
+    const images = files.filter((f) => f.type === "image");
+    const docs = files.filter((f) => f.type !== "image");
+    currentImages = images;
+
+    if (images.length) {
+      photosSection.style.display = "block";
+      photosTitle.textContent = `Photos (${images.length})`;
+      images.forEach((img, idx) => {
+        const div = document.createElement("div");
+        div.className = "photo-item";
+        const imageEl = document.createElement("img");
+        imageEl.src = img.url;
+        imageEl.loading = "lazy";
+        imageEl.alt = img.name;
+        div.appendChild(imageEl);
+        div.addEventListener("click", () => openLightbox(idx));
+        photoGrid.appendChild(div);
+      });
+    }
+
+    if (docs.length) {
+      pdfSection.style.display = "block";
+      pdfTitle.textContent = `PDF / Documents (${docs.length})`;
+      docs.forEach((doc) => {
+        const a = document.createElement("a");
+        a.href = doc.url;
+        a.target = "_blank";
+        a.className = "pdf-item";
+        a.innerHTML = `<span class="pdf-icon">PDF</span><span class="pdf-name">${doc.name}</span>`;
+        pdfList.appendChild(a);
+      });
+    }
+  }
+
+  function showExpiredOrError(msg) {
+    loadingDiv.style.display = "none";
+    errorBox.textContent = msg || "This gallery was not found or the link has expired.";
+    errorBox.style.display = "block";
+  }
+
+  async function submitPin() {
+    const pin = pinInput.value.trim();
+    if (!pin) return;
+    pinError.textContent = "";
+    pinSubmitBtn.disabled = true;
+    pinSubmitBtn.textContent = "Checking...";
+
+    try {
+      const res = await fetch(`/api/gallery/${galleryId}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        pinScreen.style.display = "none";
+        renderFiles(data.files, data.caption);
+      } else if (data.expired) {
+        pinScreen.style.display = "none";
+        showExpiredOrError("This link has expired.");
+      } else {
+        pinError.textContent = data.error || "Incorrect PIN, please try again";
+        pinInput.value = "";
+        pinInput.focus();
+      }
+    } catch (err) {
+      pinError.textContent = "Something went wrong, please try again";
+    } finally {
+      pinSubmitBtn.disabled = false;
+      pinSubmitBtn.textContent = "Unlock";
+    }
+  }
+
+  pinSubmitBtn.addEventListener("click", submitPin);
+  pinInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submitPin(); });
+
+  async function loadGallery() {
+    try {
+      const res = await fetch(`/api/gallery/${galleryId}`);
+      const data = await res.json();
+
+      loadingDiv.style.display = "none";
+
+      if (res.status === 410 || data.expired) {
+        showExpiredOrError("This link has expired.");
+        return;
+      }
+      if (!res.ok) {
+        showExpiredOrError();
+        return;
+      }
+
+      if (data.pinProtected) {
+        pinScreen.style.display = "block";
+        let sub = `Total ${data.totalFiles} files (${data.imageCount} photo, ${data.pdfCount} PDF) — Enter correct PIN`;
+        if (data.caption) sub = `💌 "${data.caption}"\n\n` + sub;
+        pinScreenSub.textContent = sub;
+        pinInput.focus();
+      } else {
+        renderFiles(data.files, data.caption);
+      }
+    } catch (err) {
+      showExpiredOrError();
+    }
+  }
+
+  loadGallery();
+</script>
+
+</body>
+</html>

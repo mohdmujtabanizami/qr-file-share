@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QR File Share</title>
+<link rel="stylesheet" href="/css/common.css" />
+<link rel="stylesheet" href="/css/index.css" />
+</head>
+<body>
+
+<div class="card">
+  <button class="theme-btn" id="themeBtn" title="Dark/Light mode">🌙</button>
+  <h1>📎 Files → 1 QR Code</h1>
+  <p class="sub">Select multiple photos and PDFs together — only one QR Code will be generated for all</p>
+
+  <div id="dropZone">
+    Drag multiple files here or click to browse
+    <input type="file" id="fileInput" multiple accept="image/*,application/pdf" />
+  </div>
+
+  <div id="summary"></div>
+  <div class="preview-grid" id="previewGrid"></div>
+
+  <div class="section-block">
+    <span class="section-label">🔒 Use PIN for this QR?</span>
+    <div class="btn-row">
+      <button type="button" id="pinNoBtn" class="active">No</button>
+      <button type="button" id="pinYesBtn">Yes</button>
+    </div>
+    <div id="pinInputBox">
+      <input type="tel" id="pinValue" maxlength="8" placeholder="e.g. 1234" inputmode="numeric" />
+      <p>The person scanning this QR will need to enter this PIN. 4-8 digits, 5-minute lock after 5 failed attempts.</p>
+    </div>
+  </div>
+
+  <div class="section-block">
+    <span class="section-label">⏳ How long should the link remain valid?</span>
+    <div class="btn-row">
+      <button type="button" class="expiryBtn active" data-days="0">Never</button>
+      <button type="button" class="expiryBtn" data-days="1">1 Day</button>
+      <button type="button" class="expiryBtn" data-days="7">7 Days</button>
+      <button type="button" class="expiryBtn" data-days="30">30 Days</button>
+    </div>
+  </div>
+
+  <div class="section-block">
+    <span class="section-label">💌 Personal Message (optional)</span>
+    <textarea id="captionInput" maxlength="300" placeholder="e.g. Happy Birthday! 🎉 Here are the photos..."></textarea>
+  </div>
+
+  <button id="uploadBtn" disabled>Upload & Generate QR</button>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar" id="progressBar"></div>
+    <div class="progress-text" id="progressText">0%</div>
+  </div>
+
+  <div id="status"></div>
+
+  <div id="result">
+    <h3>✅ QR Code is Ready</h3>
+    <p id="resultSummary"></p>
+    <img class="qr" id="qrImage" src="" alt="QR Code" />
+    <div class="result-actions">
+      <button id="downloadQrBtn">⬇️ Download QR</button>
+      <button id="copyLinkBtn">🔗 Copy Link</button>
+      <button id="shareBtn">📤 Share</button>
+    </div>
+    <div class="link-box" id="linkBox"></div>
+
+    <div class="live-badge" id="liveBadge">
+      <span class="live-dot"></span>
+      <span id="liveText">👀 Live Views: 0 — Keep this page open, you'll be notified instantly when scanned</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  const dropZone = document.getElementById("dropZone");
+  const fileInput = document.getElementById("fileInput");
+  const uploadBtn = document.getElementById("uploadBtn");
+  const summaryDiv = document.getElementById("summary");
+  const previewGrid = document.getElementById("previewGrid");
+  const statusDiv = document.getElementById("status");
+  const resultDiv = document.getElementById("result");
+  const resultSummary = document.getElementById("resultSummary");
+  const qrImage = document.getElementById("qrImage");
+  const linkBox = document.getElementById("linkBox");
+  const progressWrap = document.getElementById("progressWrap");
+  const progressBar = document.getElementById("progressBar");
+  const progressText = document.getElementById("progressText");
+
+  let selectedFiles = [];
+  let usePin = false;
+  let expiryDays = "0";
+  let lastGalleryUrl = "";
+  let lastQrDataUrl = "";
+  let liveEventSource = null;
+  const captionInput = document.getElementById("captionInput");
+  const liveBadge = document.getElementById("liveBadge");
+  const liveText = document.getElementById("liveText");
+
+  // ---------- Theme ----------
+  const themeBtn = document.getElementById("themeBtn");
+  function applyTheme(mode) {
+    document.body.classList.toggle("dark", mode === "dark");
+    themeBtn.textContent = mode === "dark" ? "☀️" : "🌙";
+  }
+  const savedTheme = localStorage.getItem("qrfs-theme") || "light";
+  applyTheme(savedTheme);
+  themeBtn.addEventListener("click", () => {
+    const next = document.body.classList.contains("dark") ? "light" : "dark";
+    applyTheme(next);
+    localStorage.setItem("qrfs-theme", next);
+  });
+
+  dropZone.addEventListener("click", () => fileInput.click());
+  dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("dragover"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+    addFiles(Array.from(e.dataTransfer.files));
+  });
+  fileInput.addEventListener("change", () => {
+    addFiles(Array.from(fileInput.files));
+    fileInput.value = "";
+  });
+
+  function addFiles(newFiles) {
+    const valid = newFiles.filter(
+      (f) => f.type.startsWith("image/") || f.type === "application/pdf"
+    );
+    if (valid.length < newFiles.length) {
+      statusDiv.textContent = "Some files were skipped — only photos or PDFs are allowed.";
+      statusDiv.className = "error";
+    } else {
+      statusDiv.textContent = "";
+      statusDiv.className = "";
+    }
+    valid.forEach((f) => {
+      const exists = selectedFiles.some((s) => s.name === f.name && s.size === f.size);
+      if (!exists) selectedFiles.push(f);
+    });
+    renderPreview();
+  }
+
+  function removeFile(index) {
+    selectedFiles.splice(index, 1);
+    renderPreview();
+  }
+
+  function renderPreview() {
+    const images = selectedFiles.filter((f) => f.type.startsWith("image/")).length;
+    const pdfs = selectedFiles.filter((f) => f.type === "application/pdf").length;
+    summaryDiv.textContent = selectedFiles.length
+      ? `Total ${selectedFiles.length} files selected (${images} photo, ${pdfs} PDF)`
+      : "";
+
+    previewGrid.innerHTML = "";
+    selectedFiles.forEach((f, idx) => {
+      const div = document.createElement("div");
+      div.className = "thumb";
+      if (f.type.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(f);
+        div.appendChild(img);
+      } else {
+        const span = document.createElement("span");
+        span.className = "pdf-badge";
+        span.textContent = "PDF";
+        div.appendChild(span);
+      }
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "remove-btn";
+      removeBtn.textContent = "×";
+      removeBtn.addEventListener("click", () => removeFile(idx));
+      div.appendChild(removeBtn);
+      previewGrid.appendChild(div);
+    });
+
+    uploadBtn.disabled = selectedFiles.length === 0;
+    resultDiv.style.display = "none";
+    if (liveEventSource) {
+      liveEventSource.close();
+      liveEventSource = null;
+    }
+  }
+
+  const pinYesBtn = document.getElementById("pinYesBtn");
+  const pinNoBtn = document.getElementById("pinNoBtn");
+  const pinInputBox = document.getElementById("pinInputBox");
+  const pinValue = document.getElementById("pinValue");
+
+  pinYesBtn.addEventListener("click", () => {
+    usePin = true;
+    pinYesBtn.classList.add("active");
+    pinNoBtn.classList.remove("active");
+    pinInputBox.style.display = "block";
+  });
+  pinNoBtn.addEventListener("click", () => {
+    usePin = false;
+    pinNoBtn.classList.add("active");
+    pinYesBtn.classList.remove("active");
+    pinInputBox.style.display = "none";
+    pinValue.value = "";
+  });
+
+
+  document.querySelectorAll(".expiryBtn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".expiryBtn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      expiryDays = btn.dataset.days;
+    });
+  });
+
+
+  uploadBtn.addEventListener("click", () => {
+    if (selectedFiles.length === 0) return;
+
+    if (usePin) {
+      const pin = pinValue.value.trim();
+      if (!/^\d{4,8}$/.test(pin)) {
+        statusDiv.textContent = "PIN must be a 4 to 8 digit number";
+        statusDiv.className = "error";
+        return;
+      }
+    }
+
+    uploadBtn.disabled = true;
+    statusDiv.textContent = "";
+    statusDiv.className = "";
+    progressWrap.style.display = "block";
+    progressBar.style.width = "0%";
+    progressText.textContent = "0%";
+
+    const formData = new FormData();
+    selectedFiles.forEach((f) => formData.append("files", f));
+    if (usePin) formData.append("pin", pinValue.value.trim());
+    formData.append("expiryDays", expiryDays);
+    formData.append("caption", captionInput.value.trim());
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/upload");
+
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        progressBar.style.width = pct + "%";
+        progressText.textContent = pct + "%";
+      }
+    });
+
+    xhr.onload = () => {
+      uploadBtn.disabled = false;
+      progressWrap.style.display = "none";
+      let data;
+      try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
+
+      if (xhr.status >= 200 && xhr.status < 300 && data && data.success) {
+        lastGalleryUrl = data.galleryUrl;
+        lastQrDataUrl = data.qrCode;
+        qrImage.src = data.qrCode;
+        linkBox.textContent = data.galleryUrl;
+
+        let note = data.pinProtected ? " 🔒 PIN-protected" : "";
+        if (data.expiresAt) {
+          const d = new Date(data.expiresAt);
+          note += ` — Valid until ${d.toLocaleDateString()}`;
+        }
+        resultSummary.textContent = `Total ${data.total} files (${data.imageCount} photo, ${data.pdfCount} PDF)${note}`;
+        resultDiv.style.display = "block";
+
+        connectLiveViews(data.galleryId);
+      } else {
+        statusDiv.textContent = "Error: " + (data && data.error ? data.error : "Something went wrong");
+        statusDiv.className = "error";
+      }
+    };
+
+    xhr.onerror = () => {
+      uploadBtn.disabled = false;
+      progressWrap.style.display = "none";
+      statusDiv.textContent = "Network error - please check your internet connection";
+      statusDiv.className = "error";
+    };
+
+    xhr.send(formData);
+  });
+
+  function connectLiveViews(galleryId) {
+    if (liveEventSource) liveEventSource.close();
+    liveEventSource = new EventSource(`/api/gallery/${galleryId}/events`);
+
+    liveEventSource.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "view") {
+        liveText.textContent = `👀 Live Views: ${msg.count} — Someone just viewed it!`;
+        liveBadge.classList.remove("pulse");
+        void liveBadge.offsetWidth;
+        liveBadge.classList.add("pulse");
+      } else if (msg.type === "connected") {
+        liveText.textContent = `👀 Live Views: ${msg.count} — Keep this page open, you'll be notified instantly when scanned`;
+      }
+    };
+  }
+
+
+  document.getElementById("downloadQrBtn").addEventListener("click", () => {
+    if (!lastQrDataUrl) return;
+    const a = document.createElement("a");
+    a.href = lastQrDataUrl;
+    a.download = "qr-code.png";
+    a.click();
+  });
+
+  document.getElementById("copyLinkBtn").addEventListener("click", async () => {
+    if (!lastGalleryUrl) return;
+    try {
+      await navigator.clipboard.writeText(lastGalleryUrl);
+      statusDiv.textContent = "Link copied successfully ✅";
+      statusDiv.className = "";
+    } catch (e) {
+      statusDiv.textContent = "Failed to copy, please select and copy the link below";
+      statusDiv.className = "error";
+    }
+  });
+
+  document.getElementById("shareBtn").addEventListener("click", async () => {
+    if (!lastGalleryUrl) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Shared Files", url: lastGalleryUrl });
+      } catch (e) {}
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(lastGalleryUrl)}`, "_blank");
+    }
+  });
+</script>
+
+</body>
+</html>

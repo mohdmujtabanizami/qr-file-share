@@ -2,22 +2,22 @@
   "version": 2,
   "builds": [
     {
-      "src": "server.js",
+      "src": "index.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/gallery/(?<id>[^/]+)",
-      "dest": "server.js"
+      "src": "/api/(.*)",
+      "dest": "index.js"
     },
     {
-      "src": "/api/(.*)",
-      "dest": "server.js"
+      "src": "/gallery/(.*)",
+      "dest": "index.js"
     },
     {
       "src": "/upload",
-      "dest": "server.js"
+      "dest": "index.js"
     },
     {
       "src": "/css/(.*)",
